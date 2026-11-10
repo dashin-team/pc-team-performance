@@ -80,7 +80,7 @@ function refreshLive(){
       if (String(inp.value) !== String(s)) { inp.value = s; flash(inp.parentElement); }
     });
     document.querySelectorAll('[data-tot]').forEach(td => { const [y,t] = td.dataset.tot.split('|'); const row = findRow(p.name, y); if (row) { const s = fmt(sum(row[t])); if (td.textContent !== s) { td.textContent = s; flash(td); } } });
-    updateCharts(p); return;
+    updateCharts(p.name); return;
   }
   if (focused) return;   // 其他頁面不會有輸入格
   const before = snapshot(), sy = window.scrollY;
@@ -188,18 +188,23 @@ function visibleYears(p){
   return p.years.slice(0, Math.max(last + 1, 1));   // 有資料的年份，且至少顯示到 116年   // 有資料的年份 + 下一年空白列
 }
 function bindInputs(p){
-  document.querySelectorAll('table.xl input').forEach(inp => {
-    inp.addEventListener('input', () => {
+  const name = p.name;
+  const applyCell = (inp) => {
       const raw = inp.value.replace(/[,\s]/g,'');
       if (raw !== '' && isNaN(Number(raw))) { inp.classList.add('dirty'); inp.style.borderColor='#e53935'; return; }
       inp.style.borderColor='';
       const value = raw === '' ? null : Number(raw), year = inp.dataset.y, table = inp.dataset.t, month = +inp.dataset.m;
-      const row = findRow(p.name, year); row[table][month] = value; row[table+'T'] = sum(row[table]);
-      pending.set(`${p.name}|${year}|${table}|${month}`, {person:p.name, year, table, month, value});
+      const row = findRow(name, year); if (!row) return;
+      row[table][month] = value; row[table+'T'] = sum(row[table]);
+      pending.set(`${name}|${year}|${table}|${month}`, {person:name, year, table, month, value});
       inp.classList.add('dirty'); inp.classList.remove('saved');
-      document.querySelector(`[data-tot="${CSS.escape(year)}|${table}"]`).textContent = fmt(row[table+'T']);
-      updateCharts(p); scheduleSave();
-    });
+      const tot = document.querySelector(`[data-tot="${CSS.escape(year)}|${table}"]`);
+      if (tot) tot.textContent = fmt(row[table+'T']);
+      updateCharts(name); scheduleSave();
+  };
+  document.querySelectorAll('table.xl input').forEach(inp => {
+    inp.addEventListener('input', () => applyCell(inp));
+    inp.addEventListener('change', () => applyCell(inp));
     inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); const all=[...document.querySelectorAll(`table.xl input[data-t="${inp.dataset.t}"]`)]; const i=all.indexOf(inp); const nx = all[i+12]; if(nx){nx.focus();nx.select();} } });
     inp.addEventListener('focus', () => inp.select());
     inp.addEventListener('blur', () => {   // 輸入時被延後的同步，離開格子後補上
@@ -209,10 +214,26 @@ function bindInputs(p){
     });
   });
 }
+function livePerson(p){
+  if (!p) return p;
+  if (typeof p === 'string') return (DATA && DATA.people[p]) || null;
+  return (DATA && DATA.people[p.name]) || p;
+}
 function updateCharts(p){
+  p = livePerson(p); if (!p) return;
   const ys = personChartYears(p);
-  TABLES.forEach((t, i) => { const c = charts[i]; if (!c) return;
-    c.data.datasets = ys.map((y,j) => ({label:y.y, data:y[t.k].map(x => x ?? null), backgroundColor:yearColor(y.y)})); c.update(); });
+  TABLES.forEach(t => {
+    const canvas = document.getElementById('ch_' + t.k);
+    const c = canvas && window.Chart && Chart.getChart(canvas);
+    if (!c) return;
+    c.data.labels = MONTHS;
+    c.data.datasets = ys.map(y => ({label:y.y, data:y[t.k].map(x => x ?? null), backgroundColor:yearColor(y.y)}));
+    if (c.options && c.options.scales) {
+      const val = c.options.scales.y && c.options.indexAxis === 'y' ? c.options.scales.x : c.options.scales.y;
+      if (val) { delete val.max; delete val.suggestedMax; val.beginAtZero = true; }
+    }
+    c.update('none');   // 輸入當下立刻重繪並重算座標軸，不等儲存、不等動畫
+  });
 }
 function scheduleSave(){ clearTimeout(saveTimer); const s=$('#saveState'); if(s) s.textContent='有未儲存的修改…'; saveTimer = setTimeout(flush, 1200); }
 async function flush(){
