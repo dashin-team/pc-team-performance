@@ -111,7 +111,10 @@ function renderPerson(v, p){
   let h = `<div class="card"><div class="ptitle"><h2>${esc(p.name)}</h2><span class="muted">圖表顯示有資料的年份（${ys.map(y=>y.y).join('、')}），高度依數據自動調整</span></div></div>`;
   h += `<div class="charts">` + TABLES.map(t => `<div class="chartbox"><canvas id="ch_${t.k}"></canvas></div>`).join('') + `</div><br>`;
   h += `<div class="tables">` + TABLES.map(t => tableHtml(p, t)).join('') + `</div>`;
+  const hidden = p.years.length - visibleYears(p).length;
+  if (hidden > 0 || showAllYears) h += `<div class="yrtoggle"><button class="btn" id="yrT">${showAllYears ? '只顯示有資料的年份' : `顯示全部年份（另有 ${hidden} 列空白年份）`}</button></div>`;
   v.innerHTML = h;
+  const yt = document.getElementById('yrT'); if (yt) yt.onclick = () => { showAllYears = !showAllYears; render(); };
   TABLES.forEach(t => {
     const ctx = document.getElementById('ch_' + t.k);
     charts.push(new Chart(ctx, {type:'bar', data:{labels:MONTHS, datasets: ys.map((y,i) => ({label:y.y, data:y[t.k].map(x => x ?? null), backgroundColor:COLORS[i%COLORS.length]}))}, options:chartOpts(t.chart)}));
@@ -119,8 +122,8 @@ function renderPerson(v, p){
   if (editMode) bindInputs(p);
 }
 function tableHtml(p, t){
-  let h = `<div class="tblwrap"><table class="xl"><thead><tr><th class="hd" colspan="14" style="font-size:16px">${t.name}</th></tr><tr><th class="hd">年月</th>${MONTHS.map(m=>`<th class="hd">${m}</th>`).join('')}<th class="hd">合計</th></tr></thead><tbody>`;
-  p.years.forEach(y => {
+  let h = `<div class="tblwrap"><table class="xl"><thead><tr><th class="hd" colspan="14" style="font-size:16px;text-align:left"><span class="stk">${t.name}</span></th></tr><tr><th class="hd">年月</th>${MONTHS.map(m=>`<th class="hd">${m}</th>`).join('')}<th class="hd">合計</th></tr></thead><tbody>`;
+  visibleYears(p).forEach(y => {
     const lab = (t.k + 'Label') in y ? y[t.k + 'Label'] : y.y;
     h += `<tr class="${hasData(y)?'':'empty'}"><td class="yr" title="${(t.k+'Label') in y ? 'Excel 此列年份欄原本是空白' : ''}">${esc(lab ?? '')}</td>`;
     y[t.k].forEach((val, m) => {
@@ -129,6 +132,12 @@ function tableHtml(p, t){
     h += `<td class="tot" data-tot="${esc(y.y)}|${t.k}">${fmt(sum(y[t.k]))}</td></tr>`;
   });
   return h + `</tbody></table></div>`;
+}
+let showAllYears = false;
+function visibleYears(p){
+  if (showAllYears) return p.years;
+  let last = -1; p.years.forEach((y,i) => { if (hasData(y)) last = i; });
+  return p.years.slice(0, Math.max(last + 2, 1));   // 有資料的年份 + 下一年空白列
 }
 function bindInputs(p){
   document.querySelectorAll('table.xl input').forEach(inp => {
@@ -175,26 +184,26 @@ let totalState = {year:null, sort:'c', dir:-1};
 function renderTotal(v){
   const years = allYears(); if (!totalState.year || !years.includes(totalState.year)) totalState.year = years[years.length-1];
   const Y = totalState.year;
-  let rows = DATA.order.map(n => ({n, ...personYear(n, Y)}));
-  const k = totalState.sort; rows.sort((a,b) => k==='name' ? a.n.localeCompare(b.n,'zh-Hant')*-totalState.dir : (b[k]-a[k])*-totalState.dir);
+  let rows = DATA.order.map(nm => ({nm, ...personYear(nm, Y)}));
+  const k = totalState.sort; rows.sort((a,b) => k==='name' ? a.nm.localeCompare(b.nm,'zh-Hant')*-totalState.dir : (b[k]-a[k])*-totalState.dir);
   const tot = {c:sum(rows.map(r=>r.c)), p:sum(rows.map(r=>r.p)), n:sum(rows.map(r=>r.n))};
   const arrow = c => totalState.sort===c ? (totalState.dir<0?' ▼':' ▲') : '';
   let h = `<div class="card"><div class="ptitle"><h2>總計・${esc(Y)}</h2><div class="controls">年度：<select id="tYear">${years.map(y=>`<option ${y===Y?'selected':''}>${y}</option>`).join('')}</select></div></div>
-  <div class="grid2"><div class="tblwrap"><table class="rank"><thead><tr><th>#</th><th data-s="name">成員${arrow('name')}</th><th data-s="c">總佣金${arrow('c')}</th><th data-s="p">總保費${arrow('p')}</th><th data-s="n">件數${arrow('n')}</th></tr></thead><tbody>
-  ${rows.map((r,i)=>`<tr><td>${i+1}</td><td><a href="?p=${encodeURIComponent(r.n)}" data-p="${esc(r.n)}">${esc(r.n)}</a></td><td>${fmt(r.c)}</td><td>${fmt(r.p)}</td><td>${fmt(r.n)}</td></tr>`).join('')}
-  </tbody><tfoot><tr><td></td><td>團隊合計</td><td>${fmt(tot.c)}</td><td>${fmt(tot.p)}</td><td>${fmt(tot.n)}</td></tr></tfoot></table></div>
+  <div class="grid2"><div class="tblwrap"><table class="rank"><thead><tr><th class="l">#</th><th class="l" data-s="name">成員${arrow('name')}</th><th data-s="c">總佣金${arrow('c')}</th><th data-s="p">總保費${arrow('p')}</th><th data-s="n">件數${arrow('n')}</th></tr></thead><tbody>
+  ${rows.map((r,i)=>`<tr><td class="l">${i+1}</td><td class="l"><a href="?p=${encodeURIComponent(r.nm)}" data-p="${esc(r.nm)}">${esc(r.nm)}</a></td><td>${fmt(r.c)}</td><td>${fmt(r.p)}</td><td>${fmt(r.n)}</td></tr>`).join('')}
+  </tbody><tfoot><tr><td></td><td class="l">團隊合計</td><td>${fmt(tot.c)}</td><td>${fmt(tot.p)}</td><td>${fmt(tot.n)}</td></tr></tfoot></table></div>
   <div class="chartbox" style="height:${Math.max(320, rows.length*24+80)}px"><canvas id="tChart"></canvas></div></div>
   <p class="muted">由每位成員頁面的月資料即時加總；點欄位標題可排序，點姓名進入個人頁。</p></div>`;
   // 團隊各年合計 + 每人各年矩陣
-  h += `<div class="card"><h3 style="margin-top:0">各年度彙總（每人 總佣金／總保費／件數）</h3><div class="tblwrap"><table class="rank"><thead><tr><th>成員</th><th></th>${years.map(y=>`<th style="text-align:right">${y}</th>`).join('')}</tr></thead><tbody>`;
-  DATA.order.forEach(n => { [['c','總佣金'],['p','總保費'],['n','件數']].forEach(([kk,lab],i) => { h += `<tr>${i===0?`<td rowspan="3"><a href="?p=${encodeURIComponent(n)}" data-p="${esc(n)}">${esc(n)}</a></td>`:''}<td class="muted">${lab}</td>${years.map(y=>`<td>${fmt(personYear(n,y)[kk])}</td>`).join('')}</tr>`; }); });
-  h += `</tbody><tfoot>${[['c','總佣金'],['p','總保費'],['n','件數']].map(([kk,lab],i)=>`<tr>${i===0?'<td rowspan="3">團隊合計</td>':''}<td>${lab}</td>${years.map(y=>`<td>${fmt(sum(DATA.order.map(n=>personYear(n,y)[kk])))}</td>`).join('')}</tr>`).join('')}</tfoot></table></div></div>`;
+  h += `<div class="card"><h3 style="margin-top:0">各年度彙總（每人 總佣金／總保費／件數）</h3><div class="tblwrap"><table class="rank"><thead><tr><th class="l">成員</th><th class="l"></th>${years.map(y=>`<th style="text-align:right">${y}</th>`).join('')}</tr></thead><tbody>`;
+  DATA.order.forEach(n => { [['c','總佣金'],['p','總保費'],['n','件數']].forEach(([kk,lab],i) => { h += `<tr style="${i===0?'border-top:2px solid #ddd':''}">${i===0?`<td class="l" rowspan="3" style="vertical-align:top"><a href="?p=${encodeURIComponent(n)}" data-p="${esc(n)}">${esc(n)}</a></td>`:''}<td class="l muted">${lab}</td>${years.map(y=>`<td>${findRow(n,y)?fmt(personYear(n,y)[kk]):''}</td>`).join('')}</tr>`; }); });
+  h += `</tbody><tfoot>${[['c','總佣金'],['p','總保費'],['n','件數']].map(([kk,lab],i)=>`<tr>${i===0?'<td class="l" rowspan="3" style="vertical-align:top">團隊合計</td>':''}<td class="l">${lab}</td>${years.map(y=>`<td>${fmt(sum(DATA.order.map(n=>personYear(n,y)[kk])))}</td>`).join('')}</tr>`).join('')}</tfoot></table></div></div>`;
   v.innerHTML = h;
   $('#tYear').onchange = e => { totalState.year = e.target.value; render(); };
   v.querySelectorAll('th[data-s]').forEach(th => th.onclick = () => { const s=th.dataset.s; totalState.dir = totalState.sort===s ? -totalState.dir : -1; totalState.sort=s; render(); });
   bindPersonLinks(v);
   const sorted = [...rows].sort((a,b)=>b[k==='name'?'c':k]-a[k==='name'?'c':k]); const mk = k==='name'?'c':k; const lab = {c:'總佣金',p:'總保費',n:'件數'}[mk];
-  charts.push(new Chart($('#tChart'), {type:'bar', data:{labels:sorted.map(r=>r.n), datasets:[{label:`${Y} ${lab}`, data:sorted.map(r=>r[mk]), backgroundColor:'#4472C4'}]}, options:chartOpts(`${Y} ${lab}排名`, 'y')}));
+  charts.push(new Chart($('#tChart'), {type:'bar', data:{labels:sorted.map(r=>r.nm), datasets:[{label:`${Y} ${lab}`, data:sorted.map(r=>r[mk]), backgroundColor:'#4472C4'}]}, options:chartOpts(`${Y} ${lab}排名`, 'y')}));
 }
 function bindPersonLinks(v){ v.querySelectorAll('a[data-p]').forEach(a => a.onclick = e => { e.preventDefault(); go({p:a.dataset.p}); }); }
 
@@ -215,9 +224,9 @@ function renderCompare(v){
   項目 <select id="cK">${TABLES.map(t=>`<option value="${t.k}" ${t.k===k?'selected':''}>${t.name}</option>`).join('')}</select>
   <label><input type="checkbox" id="cSame" ${cmpState.same?'checked':''}> 只比同期（${b} 有資料的月份）</label></div>
   <div class="chartbox" style="height:380px"><canvas id="cChart"></canvas></div><br>
-  <div class="tblwrap"><table class="rank"><thead><tr><th>#</th><th>成員</th><th>${a} ${lab}</th><th>${b} ${lab}</th><th>差額</th><th>成長率</th></tr></thead><tbody>
-  ${rows.map((r,i)=>`<tr><td>${i+1}</td><td><a href="?p=${encodeURIComponent(r.n)}" data-p="${esc(r.n)}">${esc(r.n)}</a></td><td>${fmt(r.x)}</td><td>${fmt(r.z)}</td><td class="${r.d>0?'up':r.d<0?'down':''}">${r.d>0?'+':''}${fmt(r.d)}</td><td class="${r.g>0?'up':r.g<0?'down':''}">${r.g===null?'—':(r.g>0?'+':'')+(r.g*100).toFixed(1)+'%'}</td></tr>`).join('')}
-  </tbody><tfoot><tr><td></td><td>團隊合計</td><td>${fmt(sum(rows.map(r=>r.x)))}</td><td>${fmt(sum(rows.map(r=>r.z)))}</td><td>${fmt(sum(rows.map(r=>r.d)))}</td><td>${(()=>{const x=sum(rows.map(r=>r.x)),z=sum(rows.map(r=>r.z));return x?((z-x)/x*100).toFixed(1)+'%':'—';})()}</td></tr></tfoot></table></div>
+  <div class="tblwrap"><table class="rank"><thead><tr><th class="l">#</th><th class="l">成員</th><th>${a} ${lab}</th><th>${b} ${lab}</th><th>差額</th><th>成長率</th></tr></thead><tbody>
+  ${rows.map((r,i)=>`<tr><td class="l">${i+1}</td><td class="l"><a href="?p=${encodeURIComponent(r.n)}" data-p="${esc(r.n)}">${esc(r.n)}</a></td><td>${fmt(r.x)}</td><td>${fmt(r.z)}</td><td class="${r.d>0?'up':r.d<0?'down':''}">${r.d>0?'+':''}${fmt(r.d)}</td><td class="${r.g>0?'up':r.g<0?'down':''}">${r.g===null?'—':(r.g>0?'+':'')+(r.g*100).toFixed(1)+'%'}</td></tr>`).join('')}
+  </tbody><tfoot><tr><td></td><td class="l">團隊合計</td><td>${fmt(sum(rows.map(r=>r.x)))}</td><td>${fmt(sum(rows.map(r=>r.z)))}</td><td>${fmt(sum(rows.map(r=>r.d)))}</td><td>${(()=>{const x=sum(rows.map(r=>r.x)),z=sum(rows.map(r=>r.z));return x?((z-x)/x*100).toFixed(1)+'%':'—';})()}</td></tr></tfoot></table></div>
   <p class="muted">${range}</p></div>`;
   v.innerHTML = h;
   $('#cA').onchange = e => { cmpState.a = e.target.value; render(); }; $('#cB').onchange = e => { cmpState.b = e.target.value; render(); };
@@ -357,4 +366,5 @@ window.addEventListener('resize', fixTop);
 $('#btnEdit').onclick = toggleEdit; $('#btnExport').onclick = exportXlsx; $('#btnLink').onclick = () => copyText(location.href);
 $('#btnReload').onclick = async () => { await flush(); await load(true); toast('已載入最新資料'); };
 document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(); });
+$('#view').innerHTML = '<div class="loading">資料載入中…</div>';
 fixTop(); load(true).then(fixTop); setInterval(poll, 30000);

@@ -21,7 +21,7 @@ main{padding:12px;max-width:1800px;margin:0 auto}
 .ptitle h2{margin:0;font-size:22px}
 .charts{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
 .chartbox{background:#fff;border:1px solid #e3e3e3;border-radius:8px;padding:8px;height:300px;position:relative}
-.tables{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.tables{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,860px),1fr));gap:14px}
 .tblwrap{overflow-x:auto;-webkit-overflow-scrolling:touch;background:#fff;border-radius:6px}
 table.xl{border-collapse:collapse;font-size:14px;font-weight:700;min-width:100%}
 table.xl th,table.xl td{border:1px solid var(--bd);padding:3px 5px;text-align:center;white-space:nowrap}
@@ -37,7 +37,7 @@ table.xl input.saved{background:#e8f5e9;border-color:#66bb6a}
 table.rank{border-collapse:collapse;width:100%;font-size:14px}
 table.rank th,table.rank td{border-bottom:1px solid #eee;padding:6px 8px;text-align:right;white-space:nowrap}
 table.rank th{background:var(--hd);color:var(--hdtx);cursor:pointer;position:sticky;top:0}
-table.rank td:first-child,table.rank th:first-child,table.rank td:nth-child(2),table.rank th:nth-child(2){text-align:left}
+table.rank .l{text-align:left}
 table.rank tfoot td{font-weight:700;background:#fafafa}
 table.rank a{color:var(--pri);text-decoration:none}
 .up{color:#2e7d32}.down{color:#c62828}
@@ -53,5 +53,9 @@ dialog h3{margin:0 0 10px}dialog label{display:block;font-size:14px;margin:8px 0
 .dlg-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
 .muted{color:#888;font-size:13px}
 .linklist{columns:3;font-size:14px}.linklist a{color:var(--pri)}
-@media (max-width:1300px){.tables{grid-template-columns:1fr}.charts{grid-template-columns:1fr 1fr}}
+@media (max-width:1100px){.charts{grid-template-columns:1fr 1fr}}
 @media (max-width:760px){.charts{grid-template-columns:1fr}.chartbox{height:260px}.grid2{grid-template-columns:1fr}h1{font-size:16px}.btn{padding:6px 9px;font-size:13px}main{padding:8px}.linklist{columns:2}table.xl{font-size:13px}}
+
+.stk{position:sticky;left:10px}
+.loading{padding:40px;text-align:center;color:#888}
+.yrtoggle{margin-top:8px}
