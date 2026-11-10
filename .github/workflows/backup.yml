@@ -1,0 +1,23 @@
+name: 每日備份共用資料
+on:
+  schedule:
+    - cron: '0 16 * * *'   # 每天台北時間 00:00
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 下載目前資料
+        run: |
+          API=$(grep -o "https://script.google.com/macros/s/[^']*" config.js)
+          curl -sfL "$API" -o /tmp/r.json
+          python3 -c "import json;d=json.load(open('/tmp/r.json'));assert d['ok'] and d['data'];json.dump(d,open('backup/data.json','w'),ensure_ascii=False,indent=1)"
+      - name: 有變動才提交
+        run: |
+          git config user.name "backup-bot"; git config user.email "actions@users.noreply.github.com"
+          git add backup/data.json
+          git diff --cached --quiet || git commit -m "資料備份 $(TZ=Asia/Taipei date '+%Y-%m-%d %H:%M')"
+          git push
