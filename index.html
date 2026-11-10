@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>產險團隊業績表</title>
+<meta name="description" content="產險團隊每月佣金、保費、件數業績表，大家可共同更新">
+<link rel="stylesheet" href="style.css?v=1">
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="logo">📊</span><div><h1>產險團隊業績表</h1><div id="status" class="status">載入中…</div></div></div>
+  <div class="actions">
+    <button id="btnEdit" class="btn primary">✏️ 編輯模式</button>
+    <button id="btnExport" class="btn">⬇️ 匯出 Excel</button>
+    <button id="btnLink" class="btn">🔗 複製本頁連結</button>
+    <button id="btnReload" class="btn ghost" title="重新載入最新資料">⟳</button>
+  </div>
+</header>
+<nav id="tabs" class="tabs" aria-label="工作表"></nav>
+<div id="editbar" class="editbar hidden"></div>
+<main id="view"></main>
+<div id="toast" class="toast"></div>
+<dialog id="dlg"><form method="dialog" id="dlgForm"><h3 id="dlgTitle"></h3><div id="dlgBody"></div><div class="dlg-actions"><button value="cancel" class="btn">取消</button><button value="ok" id="dlgOk" class="btn primary">確定</button></div></form></dialog>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js" defer></script>
+<script src="config.js?v=1"></script>
+<script src="app.js?v=1"></script>
+</body>
+</html>
