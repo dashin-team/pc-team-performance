@@ -6,7 +6,9 @@ const TABLES = [{k:'c',name:'佣金',chart:'佣金圖'},{k:'p',name:'保費',cha
 const COLORS = ['#4472C4','#ED7D31','#A5A5A5','#FFC000','#5B9BD5','#70AD47','#264478','#9E480E','#636363','#997300','#255E91','#43682B'];
 const LS = {pass:'perf_pass',by:'perf_by'};
 let DATA = null, META = {ver:0}, editMode = false, charts = [];
-let pending = new Map();   // key -> change
+let pending = new Map();
+let quiet = false, lastSync = null, polling = false;
+const POLL_MS = 5000;   // key -> change
 let saveTimer = null, saving = false;
 
 const $ = s => document.querySelector(s);
@@ -33,20 +35,57 @@ function applyServer(j){
 }
 function setStatus(extra){
   const s = META.updatedAt ? `最後更新：${fmtTime(META.updatedAt)}${META.updatedBy ? '・' + esc(META.updatedBy) : ''}` : '';
-  $('#status').innerHTML = (extra ? extra + '　' : '') + s;
+  const sy = lastSync ? `<span class="sync" title="每 5 秒自動檢查一次（分頁在背景時暫停）">🟢 最後同步 ${lastSync.toLocaleTimeString('zh-TW',{hour12:false,timeZone:'Asia/Taipei'})}</span>` : '';
+  $('#status').innerHTML = (extra ? extra + '　' : '') + s + (sy ? '　' + sy : '');
 }
-async function load(force){
+async function load(force, live){
   try {
     const j = await apiGet();
     if (!j.ok || !j.data) throw new Error('無資料');
-    if (!force && j.ver === META.ver) return false;
-    applyServer(j); render(); return true;
+    lastSync = new Date();
+    if (!force && j.ver === META.ver) { setStatus(); return false; }
+    if (live && saving) return false;            // 自己正在存檔，等存完再說
+    applyServer(j); live ? refreshLive() : render(); return true;
   } catch(e){ setStatus('⚠️ 讀取失敗：' + e.message); console.error(e); return false; }
 }
+// 每 5 秒只問「版本號」（後端放在快取，不吃配額）；版本變了才下載整份資料
 async function poll(){
-  if (document.hidden || pending.size || saving) return;
-  try { const m = await apiGet('meta=1'); if (m.ok && m.ver !== META.ver && !document.activeElement?.matches('input')) { await load(true); toast('已載入其他人的最新更新'); } } catch(e){}
+  if (document.hidden || polling || saving || !DATA) return;
+  polling = true;
+  try {
+    const m = await apiGet('meta=1');
+    if (m.ok) { lastSync = new Date(); if (m.ver !== META.ver) { const by = m.updatedBy; if (await load(false, true)) toast(`已同步${by ? '「' + by + '」' : '其他人'}的更新`, 1800); } else setStatus(); }
+  } catch(e){ setStatus('⚠️ 同步失敗，稍後重試'); }
+  finally { polling = false; }
 }
+// 有新資料時：保留正在輸入的格子不動，其餘更新並短暫標色
+function refreshLive(){
+  const r = route(), focused = document.activeElement && document.activeElement.matches('table.xl input') ? document.activeElement : null;
+  if (r.type === 'person' && focused && DATA.people[r.name]) {
+    const p = DATA.people[r.name];
+    document.querySelectorAll('table.xl input').forEach(inp => {
+      if (inp === focused) return;
+      const k = `${p.name}|${inp.dataset.y}|${inp.dataset.t}|${inp.dataset.m}`; if (pending.has(k)) return;
+      const row = findRow(p.name, inp.dataset.y); if (!row) return;
+      const v = row[inp.dataset.t][+inp.dataset.m], s = v ?? '';
+      if (String(inp.value) !== String(s)) { inp.value = s; flash(inp.parentElement); }
+    });
+    document.querySelectorAll('[data-tot]').forEach(td => { const [y,t] = td.dataset.tot.split('|'); const row = findRow(p.name, y); if (row) { const s = fmt(sum(row[t])); if (td.textContent !== s) { td.textContent = s; flash(td); } } });
+    updateCharts(p); return;
+  }
+  if (focused) return;   // 其他頁面不會有輸入格
+  const before = snapshot(), sy = window.scrollY;
+  quiet = true; render(true); quiet = false; window.scrollTo(0, sy);
+  const after = snapshot();
+  for (const [k, el] of after) { const b = before.get(k); if (b !== undefined && b.text !== el.text) flash(el.td); }
+}
+function snapshot(){
+  const m = new Map();
+  document.querySelectorAll('#view tr[data-k]').forEach(tr => { const off = +(tr.dataset.off || 0);
+    [...tr.children].forEach((td, i) => { const inp = td.querySelector('input'); m.set(tr.dataset.k + '|' + (i - off), {td, text: inp ? inp.value : td.textContent}); }); });
+  return m;
+}
+function flash(td){ if (!td) return; td.classList.remove('flash'); void td.offsetWidth; td.classList.add('flash'); setTimeout(() => td.classList.remove('flash'), 3000); }
 
 // ---------- 路由 ----------
 function route(){ const q = new URLSearchParams(location.search); if (q.get('p')) return {type:'person', name:q.get('p')}; return {type: q.get('v') || 'total'}; }
@@ -69,9 +108,9 @@ function renderTabs(cur){
   nav.querySelectorAll('a').forEach(a => a.onclick = ev => { ev.preventDefault();
     if (a.dataset.add) return addPerson();
     if (a.dataset.p) go({p:a.dataset.p}); else go({v:a.dataset.v}); });
-  const act = nav.querySelector('.active'); if (act) act.scrollIntoView({block:'nearest', inline:'center'});
+  const act = nav.querySelector('.active'); if (act && !quiet) { const x = act.offsetLeft - nav.clientWidth/2 + act.clientWidth/2; nav.scrollLeft = x; }
 }
-function render(){
+function render(live){
   if (!DATA) return;
   charts.forEach(c => c.destroy()); charts = [];
   const r = route(); renderTabs(r); renderEditbar(r);
@@ -98,7 +137,7 @@ function renderEditbar(r){
 }
 
 function chartOpts(title, indexAxis){
-  return {responsive:true, maintainAspectRatio:false, indexAxis: indexAxis||'x', animation:{duration:300},
+  return {responsive:true, maintainAspectRatio:false, indexAxis: indexAxis||'x', animation: quiet ? false : {duration:300},
     plugins:{title:{display:true,text:title,font:{size:16,weight:'bold'}}, legend:{position:'bottom'},
       tooltip:{callbacks:{label:c=>`${c.dataset.label}：${fmt(c.parsed[indexAxis==='y'?'x':'y'])}`}}},
     scales:{x:{grid:{display:indexAxis==='y'},ticks:{callback:function(v){return indexAxis==='y'?fmt(v):this.getLabelForValue(v);}}},
@@ -125,7 +164,7 @@ function tableHtml(p, t){
   let h = `<div class="tblwrap"><table class="xl"><thead><tr><th class="hd" colspan="14" style="font-size:16px;text-align:left"><span class="stk">${t.name}</span></th></tr><tr><th class="hd">年月</th>${MONTHS.map(m=>`<th class="hd">${m}</th>`).join('')}<th class="hd">合計</th></tr></thead><tbody>`;
   visibleYears(p).forEach(y => {
     const lab = (t.k + 'Label') in y ? y[t.k + 'Label'] : y.y;
-    h += `<tr class="${hasData(y)?'':'empty'}"><td class="yr" title="${(t.k+'Label') in y ? 'Excel 此列年份欄原本是空白' : ''}">${esc(lab ?? '')}</td>`;
+    h += `<tr data-k="${t.k}|${esc(y.y)}" class="${hasData(y)?'':'empty'}"><td class="yr" title="${(t.k+'Label') in y ? 'Excel 此列年份欄原本是空白' : ''}">${esc(lab ?? '')}</td>`;
     y[t.k].forEach((val, m) => {
       h += editMode ? `<td><input inputmode="numeric" data-y="${esc(y.y)}" data-t="${t.k}" data-m="${m}" value="${val ?? ''}"></td>` : `<td>${val ?? ''}</td>`;
     });
@@ -154,6 +193,11 @@ function bindInputs(p){
     });
     inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); const all=[...document.querySelectorAll(`table.xl input[data-t="${inp.dataset.t}"]`)]; const i=all.indexOf(inp); const nx = all[i+12]; if(nx){nx.focus();nx.select();} } });
     inp.addEventListener('focus', () => inp.select());
+    inp.addEventListener('blur', () => {   // 輸入時被延後的同步，離開格子後補上
+      const k = `${p.name}|${inp.dataset.y}|${inp.dataset.t}|${inp.dataset.m}`; if (pending.has(k)) return;
+      const row = findRow(p.name, inp.dataset.y); if (!row) return; const s = row[inp.dataset.t][+inp.dataset.m] ?? '';
+      if (String(inp.value) !== String(s)) { inp.value = s; flash(inp.parentElement); }
+    });
   });
 }
 function updateCharts(p){
@@ -190,14 +234,14 @@ function renderTotal(v){
   const arrow = c => totalState.sort===c ? (totalState.dir<0?' ▼':' ▲') : '';
   let h = `<div class="card"><div class="ptitle"><h2>總計・${esc(Y)}</h2><div class="controls">年度：<select id="tYear">${years.map(y=>`<option ${y===Y?'selected':''}>${y}</option>`).join('')}</select></div></div>
   <div class="grid2"><div class="tblwrap"><table class="rank"><thead><tr><th class="l">#</th><th class="l" data-s="name">成員${arrow('name')}</th><th data-s="c">總佣金${arrow('c')}</th><th data-s="p">總保費${arrow('p')}</th><th data-s="n">件數${arrow('n')}</th></tr></thead><tbody>
-  ${rows.map((r,i)=>`<tr><td class="l">${i+1}</td><td class="l"><a href="?p=${encodeURIComponent(r.nm)}" data-p="${esc(r.nm)}">${esc(r.nm)}</a></td><td>${fmt(r.c)}</td><td>${fmt(r.p)}</td><td>${fmt(r.n)}</td></tr>`).join('')}
-  </tbody><tfoot><tr><td></td><td class="l">團隊合計</td><td>${fmt(tot.c)}</td><td>${fmt(tot.p)}</td><td>${fmt(tot.n)}</td></tr></tfoot></table></div>
+  ${rows.map((r,i)=>`<tr data-k="r|${esc(r.nm)}"><td class="l">${i+1}</td><td class="l"><a href="?p=${encodeURIComponent(r.nm)}" data-p="${esc(r.nm)}">${esc(r.nm)}</a></td><td>${fmt(r.c)}</td><td>${fmt(r.p)}</td><td>${fmt(r.n)}</td></tr>`).join('')}
+  </tbody><tfoot><tr data-k="rfoot"><td></td><td class="l">團隊合計</td><td>${fmt(tot.c)}</td><td>${fmt(tot.p)}</td><td>${fmt(tot.n)}</td></tr></tfoot></table></div>
   <div class="chartbox" style="height:${Math.max(320, rows.length*24+80)}px"><canvas id="tChart"></canvas></div></div>
   <p class="muted">由每位成員頁面的月資料即時加總；點欄位標題可排序，點姓名進入個人頁。</p></div>`;
   // 團隊各年合計 + 每人各年矩陣
   h += `<div class="card"><h3 style="margin-top:0">各年度彙總（每人 總佣金／總保費／件數）</h3><div class="tblwrap"><table class="rank"><thead><tr><th class="l">成員</th><th class="l"></th>${years.map(y=>`<th style="text-align:right">${y}</th>`).join('')}</tr></thead><tbody>`;
-  DATA.order.forEach(n => { [['c','總佣金'],['p','總保費'],['n','件數']].forEach(([kk,lab],i) => { h += `<tr style="${i===0?'border-top:2px solid #ddd':''}">${i===0?`<td class="l" rowspan="3" style="vertical-align:top"><a href="?p=${encodeURIComponent(n)}" data-p="${esc(n)}">${esc(n)}</a></td>`:''}<td class="l muted">${lab}</td>${years.map(y=>`<td>${findRow(n,y)?fmt(personYear(n,y)[kk]):''}</td>`).join('')}</tr>`; }); });
-  h += `</tbody><tfoot>${[['c','總佣金'],['p','總保費'],['n','件數']].map(([kk,lab],i)=>`<tr>${i===0?'<td class="l" rowspan="3" style="vertical-align:top">團隊合計</td>':''}<td class="l">${lab}</td>${years.map(y=>`<td>${fmt(sum(DATA.order.map(n=>personYear(n,y)[kk])))}</td>`).join('')}</tr>`).join('')}</tfoot></table></div></div>`;
+  DATA.order.forEach(n => { [['c','總佣金'],['p','總保費'],['n','件數']].forEach(([kk,lab],i) => { h += `<tr data-k="m|${esc(n)}|${kk}" data-off="${i===0?1:0}" style="${i===0?'border-top:2px solid #ddd':''}">${i===0?`<td class="l" rowspan="3" style="vertical-align:top"><a href="?p=${encodeURIComponent(n)}" data-p="${esc(n)}">${esc(n)}</a></td>`:''}<td class="l muted">${lab}</td>${years.map(y=>`<td>${findRow(n,y)?fmt(personYear(n,y)[kk]):''}</td>`).join('')}</tr>`; }); });
+  h += `</tbody><tfoot>${[['c','總佣金'],['p','總保費'],['n','件數']].map(([kk,lab],i)=>`<tr data-k="mf|${kk}" data-off="${i===0?1:0}">${i===0?'<td class="l" rowspan="3" style="vertical-align:top">團隊合計</td>':''}<td class="l">${lab}</td>${years.map(y=>`<td>${fmt(sum(DATA.order.map(n=>personYear(n,y)[kk])))}</td>`).join('')}</tr>`).join('')}</tfoot></table></div></div>`;
   v.innerHTML = h;
   $('#tYear').onchange = e => { totalState.year = e.target.value; render(); };
   v.querySelectorAll('th[data-s]').forEach(th => th.onclick = () => { const s=th.dataset.s; totalState.dir = totalState.sort===s ? -totalState.dir : -1; totalState.sort=s; render(); });
@@ -225,8 +269,8 @@ function renderCompare(v){
   <label><input type="checkbox" id="cSame" ${cmpState.same?'checked':''}> 只比同期（${b} 有資料的月份）</label></div>
   <div class="chartbox" style="height:380px"><canvas id="cChart"></canvas></div><br>
   <div class="tblwrap"><table class="rank"><thead><tr><th class="l">#</th><th class="l">成員</th><th>${a} ${lab}</th><th>${b} ${lab}</th><th>差額</th><th>成長率</th></tr></thead><tbody>
-  ${rows.map((r,i)=>`<tr><td class="l">${i+1}</td><td class="l"><a href="?p=${encodeURIComponent(r.n)}" data-p="${esc(r.n)}">${esc(r.n)}</a></td><td>${fmt(r.x)}</td><td>${fmt(r.z)}</td><td class="${r.d>0?'up':r.d<0?'down':''}">${r.d>0?'+':''}${fmt(r.d)}</td><td class="${r.g>0?'up':r.g<0?'down':''}">${r.g===null?'—':(r.g>0?'+':'')+(r.g*100).toFixed(1)+'%'}</td></tr>`).join('')}
-  </tbody><tfoot><tr><td></td><td class="l">團隊合計</td><td>${fmt(sum(rows.map(r=>r.x)))}</td><td>${fmt(sum(rows.map(r=>r.z)))}</td><td>${fmt(sum(rows.map(r=>r.d)))}</td><td>${(()=>{const x=sum(rows.map(r=>r.x)),z=sum(rows.map(r=>r.z));return x?((z-x)/x*100).toFixed(1)+'%':'—';})()}</td></tr></tfoot></table></div>
+  ${rows.map((r,i)=>`<tr data-k="c|${esc(r.n)}"><td class="l">${i+1}</td><td class="l"><a href="?p=${encodeURIComponent(r.n)}" data-p="${esc(r.n)}">${esc(r.n)}</a></td><td>${fmt(r.x)}</td><td>${fmt(r.z)}</td><td class="${r.d>0?'up':r.d<0?'down':''}">${r.d>0?'+':''}${fmt(r.d)}</td><td class="${r.g>0?'up':r.g<0?'down':''}">${r.g===null?'—':(r.g>0?'+':'')+(r.g*100).toFixed(1)+'%'}</td></tr>`).join('')}
+  </tbody><tfoot><tr data-k="cfoot"><td></td><td class="l">團隊合計</td><td>${fmt(sum(rows.map(r=>r.x)))}</td><td>${fmt(sum(rows.map(r=>r.z)))}</td><td>${fmt(sum(rows.map(r=>r.d)))}</td><td>${(()=>{const x=sum(rows.map(r=>r.x)),z=sum(rows.map(r=>r.z));return x?((z-x)/x*100).toFixed(1)+'%':'—';})()}</td></tr></tfoot></table></div>
   <p class="muted">${range}</p></div>`;
   v.innerHTML = h;
   $('#cA').onchange = e => { cmpState.a = e.target.value; render(); }; $('#cB').onchange = e => { cmpState.b = e.target.value; render(); };
@@ -367,4 +411,4 @@ $('#btnEdit').onclick = toggleEdit; $('#btnExport').onclick = exportXlsx; $('#bt
 $('#btnReload').onclick = async () => { await flush(); await load(true); toast('已載入最新資料'); };
 document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(); });
 $('#view').innerHTML = '<div class="loading">資料載入中…</div>';
-fixTop(); load(true).then(fixTop); setInterval(poll, 30000);
+fixTop(); load(true).then(fixTop); setInterval(poll, POLL_MS);
