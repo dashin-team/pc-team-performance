@@ -13,7 +13,7 @@ jobs:
       - name: 下載目前資料
         run: |
           API=$(grep -o "https://script.google.com/macros/s/[^']*" config.js)
-          curl -sfL "$API" -o /tmp/r.json
+          mkdir -p backup; curl -sfL "$API" -o /tmp/r.json
           python3 -c "import json;d=json.load(open('/tmp/r.json'));assert d['ok'] and d['data'];json.dump(d,open('backup/data.json','w'),ensure_ascii=False,indent=1)"
       - name: 有變動才提交
         run: |
