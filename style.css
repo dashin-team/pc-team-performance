@@ -6,22 +6,14 @@
   --bgimg:url(nanen-bg.jpg);
 }
 *{box-sizing:border-box}
-html{background:var(--navy2)}
+html,body{background:linear-gradient(180deg,#0a2a5c 0%,#0f4c8a 55%,#0a2a5c 100%);background-attachment:fixed}
 body{
   margin:0;
   font-family:"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;
   color:var(--tx);
   -webkit-text-size-adjust:100%;
-  background:transparent;
   min-height:100vh;
   position:relative;
-}
-body::before{
-  content:"";
-  position:fixed;inset:0;z-index:-2;pointer-events:none;
-  background:
-    linear-gradient(180deg,rgba(6,28,64,.28) 0%,rgba(10,42,92,.42) 45%,rgba(6,28,64,.55) 100%),
-    var(--bgimg) center/cover no-repeat;
 }
 .top{
   position:sticky;top:0;z-index:20;
@@ -139,7 +131,18 @@ dialog input{width:100%}
 .linklist{columns:3;font-size:14px}.linklist a{color:var(--pri)}
 @media (max-width:1100px){.charts{grid-template-columns:1fr 1fr}}
 @media (max-width:760px){
-  .top{min-height:96px;padding:8px 10px 10px;background-position:center 40%}
+  .top{
+    min-height:0;padding:8px 10px 10px;
+    background-color:#0a2a5c;
+    background-image:
+      linear-gradient(to bottom,transparent 0,transparent 56px,rgba(10,42,92,.9) 68px,#0a2a5c 86px),
+      var(--bgimg);
+    background-position:right top,right 4px top 0;
+    background-size:auto,auto 68px;
+    background-repeat:no-repeat;
+  }
+  .brand{flex:1 1 100%;padding-right:78px;box-sizing:border-box}
+  .actions{flex:1 1 100%;justify-content:flex-start;position:relative;z-index:1}
   h1{font-size:16px;letter-spacing:.08em}
   .charts{grid-template-columns:1fr}.chartbox{height:260px}
   .grid2{grid-template-columns:1fr}

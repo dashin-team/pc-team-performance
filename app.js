@@ -3,7 +3,15 @@
 const API = window.API_URL;
 const MONTHS = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
 const TABLES = [{k:'c',name:'佣金',chart:'佣金圖'},{k:'p',name:'保費',chart:'保費圖'},{k:'n',name:'件數',chart:'件數圖'}];
-const COLORS = ['#4472C4','#ED7D31','#A5A5A5','#FFC000','#5B9BD5','#70AD47','#264478','#9E480E','#636363','#997300','#255E91','#43682B'];
+const YEAR_COLORS = {'109年':'#264478','110年':'#9E480E','111年':'#636363','112年':'#FFC000','113年':'#4472C4','114年':'#ED7D31','115年':'#A5A5A5','116年':'#70AD47','117年':'#5B9BD5'};
+const YEAR_COLORS_EXTRA = ['#997300','#255E91','#43682B','#C00000','#7030A0','#00B0F0'];
+function yearColor(y){
+  const s = String(y).includes('年') ? String(y) : String(y) + '年';
+  if (YEAR_COLORS[s]) return YEAR_COLORS[s];
+  const n = parseInt(s, 10);
+  if (!isNaN(n) && n >= 118) return YEAR_COLORS_EXTRA[(n - 118) % YEAR_COLORS_EXTRA.length];
+  return '#4472C4';
+}
 const LS = {pass:'perf_pass',by:'perf_by'};
 let DATA = null, META = {ver:0}, editMode = false, charts = [];
 let pending = new Map();
@@ -157,7 +165,7 @@ function renderPerson(v, p){
   const yt = document.getElementById('yrT'); if (yt) yt.onclick = () => { showAllYears = !showAllYears; render(); };
   TABLES.forEach(t => {
     const ctx = document.getElementById('ch_' + t.k);
-    charts.push(new Chart(ctx, {type:'bar', data:{labels:MONTHS, datasets: ys.map((y,i) => ({label:y.y, data:y[t.k].map(x => x ?? null), backgroundColor:COLORS[i%COLORS.length]}))}, options:chartOpts(t.chart)}));
+    charts.push(new Chart(ctx, {type:'bar', data:{labels:MONTHS, datasets: ys.map((y,i) => ({label:y.y, data:y[t.k].map(x => x ?? null), backgroundColor:yearColor(y.y)}))}, options:chartOpts(t.chart)}));
   });
   if (editMode) bindInputs(p);
 }
@@ -204,7 +212,7 @@ function bindInputs(p){
 function updateCharts(p){
   const ys = personChartYears(p);
   TABLES.forEach((t, i) => { const c = charts[i]; if (!c) return;
-    c.data.datasets = ys.map((y,j) => ({label:y.y, data:y[t.k].map(x => x ?? null), backgroundColor:COLORS[j%COLORS.length]})); c.update(); });
+    c.data.datasets = ys.map((y,j) => ({label:y.y, data:y[t.k].map(x => x ?? null), backgroundColor:yearColor(y.y)})); c.update(); });
 }
 function scheduleSave(){ clearTimeout(saveTimer); const s=$('#saveState'); if(s) s.textContent='有未儲存的修改…'; saveTimer = setTimeout(flush, 1200); }
 async function flush(){
@@ -250,7 +258,7 @@ function renderTotal(v){
   v.querySelectorAll('th[data-s]').forEach(th => th.onclick = () => { const s=th.dataset.s; totalState.dir = totalState.sort===s ? -totalState.dir : -1; totalState.sort=s; render(); });
   bindPersonLinks(v);
   const sorted = [...rows].sort((a,b)=>b[k==='name'?'c':k]-a[k==='name'?'c':k]); const mk = k==='name'?'c':k; const lab = {c:'總佣金',p:'總保費',n:'件數'}[mk];
-  charts.push(new Chart($('#tChart'), {type:'bar', data:{labels:sorted.map(r=>r.nm), datasets:[{label:`${Y} ${lab}`, data:sorted.map(r=>r[mk]), backgroundColor:'#4472C4'}]}, options:chartOpts(`${Y} ${lab}排名`, 'y')}));
+  charts.push(new Chart($('#tChart'), {type:'bar', data:{labels:sorted.map(r=>r.nm), datasets:[{label:`${Y} ${lab}`, data:sorted.map(r=>r[mk]), backgroundColor:yearColor(Y)}]}, options:chartOpts(`${Y} ${lab}排名`, 'y')}));
 }
 function bindPersonLinks(v){ v.querySelectorAll('a[data-p]').forEach(a => a.onclick = e => { e.preventDefault(); go({p:a.dataset.p}); }); }
 
@@ -280,7 +288,7 @@ function renderCompare(v){
   $('#cA').onchange = e => { cmpState.a = e.target.value; render(); }; $('#cB').onchange = e => { cmpState.b = e.target.value; render(); };
   $('#cK').onchange = e => { cmpState.k = e.target.value; render(); }; $('#cSame').onchange = e => { cmpState.same = e.target.checked; render(); };
   bindPersonLinks(v);
-  charts.push(new Chart($('#cChart'), {type:'bar', data:{labels:rows.map(r=>r.n), datasets:[{label:a, data:rows.map(r=>r.x), backgroundColor:'#A5A5A5'},{label:b, data:rows.map(r=>r.z), backgroundColor:'#4472C4'}]}, options:chartOpts(`${lab}比較 ${a} vs ${b} ${range}`)}));
+  charts.push(new Chart($('#cChart'), {type:'bar', data:{labels:rows.map(r=>r.n), datasets:[{label:a, data:rows.map(r=>r.x), backgroundColor:yearColor(a)},{label:b, data:rows.map(r=>r.z), backgroundColor:yearColor(b)}]}, options:chartOpts(`${lab}比較 ${a} vs ${b} ${range}`)}));
 }
 
 // ---------- 個人連結 ----------
