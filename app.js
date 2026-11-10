@@ -8,7 +8,8 @@ const LS = {pass:'perf_pass',by:'perf_by'};
 let DATA = null, META = {ver:0}, editMode = false, charts = [];
 let pending = new Map();
 let quiet = false, lastSync = null, polling = false;
-const POLL_MS = 5000;   // key -> change
+const POLL_MS = 5000;
+const MIN_YEAR = 116;   // 一定顯示到這一年（明年表格），即使還沒有資料   // key -> change
 let saveTimer = null, saving = false;
 
 const $ = s => document.querySelector(s);
@@ -143,7 +144,7 @@ function chartOpts(title, indexAxis){
     scales:{x:{grid:{display:indexAxis==='y'},ticks:{callback:function(v){return indexAxis==='y'?fmt(v):this.getLabelForValue(v);}}},
             y:{beginAtZero:true,ticks:{callback:function(v){return indexAxis==='y'?this.getLabelForValue(v):fmt(v);}}}}};  // 不設上限 → 依數據自動調整高低
 }
-function personChartYears(p){ const ys = p.years.filter(hasData); return ys.length ? ys : p.years.slice(0,1); }
+function personChartYears(p){ const ys = p.years.filter(y => hasData(y) || yNum(y.y) === MIN_YEAR); return ys.length ? ys : p.years.slice(0,1); }
 
 function renderPerson(v, p){
   const ys = personChartYears(p);
@@ -175,8 +176,8 @@ function tableHtml(p, t){
 let showAllYears = false;
 function visibleYears(p){
   if (showAllYears) return p.years;
-  let last = -1; p.years.forEach((y,i) => { if (hasData(y)) last = i; });
-  return p.years.slice(0, Math.max(last + 2, 1));   // 有資料的年份 + 下一年空白列
+  let last = -1; p.years.forEach((y,i) => { if (hasData(y) || yNum(y.y) <= MIN_YEAR) last = i; });
+  return p.years.slice(0, Math.max(last + 1, 1));   // 有資料的年份，且至少顯示到 116年   // 有資料的年份 + 下一年空白列
 }
 function bindInputs(p){
   document.querySelectorAll('table.xl input').forEach(inp => {
@@ -222,11 +223,13 @@ async function flush(){
 window.addEventListener('beforeunload', e => { if (pending.size) { e.preventDefault(); e.returnValue = ''; } });
 
 // ---------- 總計 ----------
-function allYears(){ const s = new Set(); DATA.order.forEach(n => DATA.people[n].years.forEach(y => { if (hasData(y)) s.add(y.y); })); return [...s].sort((a,b)=>yNum(a)-yNum(b)); }
+function allYears(){ const s = new Set([MIN_YEAR + '年']); DATA.order.forEach(n => DATA.people[n].years.forEach(y => { if (hasData(y)) s.add(y.y); })); return [...s].sort((a,b)=>yNum(a)-yNum(b)); }
+function dataYears(){ const s = new Set(); DATA.order.forEach(n => DATA.people[n].years.forEach(y => { if (hasData(y)) s.add(y.y); })); return [...s].sort((a,b)=>yNum(a)-yNum(b)); }
+function latestDataYear(){ const d = dataYears(); return d.length ? d[d.length-1] : MIN_YEAR + '年'; }
 function personYear(n, year){ const y = findRow(n, year); return y ? {c:sum(y.c), p:sum(y.p), n:sum(y.n)} : {c:0,p:0,n:0}; }
 let totalState = {year:null, sort:'c', dir:-1};
 function renderTotal(v){
-  const years = allYears(); if (!totalState.year || !years.includes(totalState.year)) totalState.year = years[years.length-1];
+  const years = allYears(); if (!totalState.year || !years.includes(totalState.year)) totalState.year = latestDataYear();
   const Y = totalState.year;
   let rows = DATA.order.map(nm => ({nm, ...personYear(nm, Y)}));
   const k = totalState.sort; rows.sort((a,b) => k==='name' ? a.nm.localeCompare(b.nm,'zh-Hant')*-totalState.dir : (b[k]-a[k])*-totalState.dir);
@@ -256,8 +259,9 @@ let cmpState = {a:null, b:null, k:'c', same:true};
 function lastMonthWithData(year){ let last = -1; DATA.order.forEach(n => { const y = findRow(n, year); if (y) ['c','p','n'].forEach(k => y[k].forEach((v,i) => { if (v !== null && v !== undefined && i > last) last = i; })); }); return last; }
 function renderCompare(v){
   const years = allYears();
-  if (!cmpState.b || !years.includes(cmpState.b)) cmpState.b = years[years.length-1];
-  if (!cmpState.a || !years.includes(cmpState.a)) cmpState.a = years[Math.max(0, years.length-2)];
+  // 預設：最新有資料的年份 vs 前一年（116年有資料後自動變成 116 vs 115 同期）
+  if (!cmpState.b || !years.includes(cmpState.b)) cmpState.b = latestDataYear();
+  if (!cmpState.a || !years.includes(cmpState.a)) { const i = years.indexOf(cmpState.b); cmpState.a = years[Math.max(0, i-1)]; }
   const {a, b, k} = cmpState; const lm = lastMonthWithData(b); const lim = cmpState.same && lm >= 0 && lm < 11 ? lm : 11;
   const val = (n, y) => { const r = findRow(n, y); return r ? sum(r[k].slice(0, lim+1)) : 0; };
   const rows = DATA.order.map(n => { const x = val(n,a), z = val(n,b); return {n, x, z, d:z-x, g: x ? (z-x)/x : null}; }).sort((p,q)=>q.z-p.z);
